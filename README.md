@@ -1,12 +1,25 @@
 # SecureVault
 
-A desktop encrypted file vault for Windows and Linux. Files stay on your computer as ciphertext — this is a normal desktop app, not a portable USB tool.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
+![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C)
+![Qt 6](https://img.shields.io/badge/Qt-6-41CD52)
+
+A desktop encrypted file vault for Windows and Linux.
 
 Files on disk are ciphertext with obfuscated names. Real names, folders, and contents are only visible after you unlock with your password.
 
 **C++20 · Qt 6 QML · libsodium** · one codebase for Windows and Linux.
 
+![SecureVault main window](docs/images/vault.png)
+
 > **Lost password = lost vault.** There is no recovery.
+
+## Screenshots
+
+| Unlock | Settings | Delete confirmation |
+| --- | --- | --- |
+| ![Unlock screen](docs/images/unlock.png) | ![Settings screen](docs/images/settings.png) | ![Delete confirmation dialog](docs/images/delete-confirm.png) |
 
 ## Features
 
@@ -103,13 +116,14 @@ macOS is the same source; v1 does not ship notarized packages.
 ## Project layout
 
 ```
-secure-vault/
+SecureVault/
 ├── main.cpp                 # App entry, sodium init, QML context
 ├── src/
 │   ├── app/                 # Unencrypted app settings (last vault path)
 │   ├── crypto/              # libsodium wrappers (AEAD, Argon2id, secretstream)
 │   └── vault/               # Header, index, blob store, session
 ├── *.qml                    # Qt Quick UI
+├── docs/images/             # README screenshots
 └── packaging/
 ```
 
@@ -119,4 +133,9 @@ Early **v0.1** folder vault. Useful as a personal encrypted file browser; not au
 
 ## License
 
-No license file is published yet. All rights reserved until one is added.
+SecureVault is released under the [MIT License](LICENSE).
+
+It uses third-party libraries under their own licenses:
+
+- [Qt 6](https://www.qt.io/licensing): LGPLv3 (open-source edition)
+- [libsodium](https://github.com/jedisct1/libsodium): ISC
