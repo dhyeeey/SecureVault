@@ -1,0 +1,16 @@
+build/
+tests/
+.qtcreator/
+CMakeLists.txt.user
+CMakeLists.txt.user.*
+out/
+.idea/
+.vs/
+*.user
+*.autosave
+cmake-build-*/
+.cache/
+*.vault
+.DS_Store
+Thumbs.db
+CMakeUserPresets.json
