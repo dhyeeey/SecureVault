@@ -14,3 +14,4 @@ cmake-build-*/
 .DS_Store
 Thumbs.db
 CMakeUserPresets.json
+commit-msg.txt

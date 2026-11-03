@@ -10,25 +10,7 @@ find_package(Qt6 REQUIRED COMPONENTS Quick Concurrent Gui)
 
 qt_standard_project_setup(REQUIRES 6.10)
 
-include(FetchContent)
-
-if (NOT TARGET sodium AND NOT TARGET unofficial-sodium::sodium)
-    find_package(unofficial-sodium CONFIG QUIET)
-endif()
-
-if (TARGET unofficial-sodium::sodium)
-    add_library(sodium ALIAS unofficial-sodium::sodium)
-elseif (NOT TARGET sodium)
-    set(SODIUM_DISABLE_TESTS ON CACHE BOOL "" FORCE)
-    set(SODIUM_MINIMAL OFF CACHE BOOL "" FORCE)
-    FetchContent_Declare(
-        Sodium
-        GIT_REPOSITORY https://github.com/robinlinden/libsodium-cmake.git
-        GIT_TAG 99f14233eab1d4f7f49c2af4ec836f2e701c445e
-        GIT_PROGRESS TRUE
-    )
-    FetchContent_MakeAvailable(Sodium)
-endif()
+include("${CMAKE_CURRENT_LIST_DIR}/third_party/sodium.cmake")
 
 set(VAULT_CORE_SOURCES
     src/crypto/CryptoService.cpp
@@ -52,6 +34,12 @@ set(VAULT_CORE_SOURCES
 add_library(vaultcore STATIC ${VAULT_CORE_SOURCES})
 target_include_directories(vaultcore PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(vaultcore PUBLIC Qt6::Core Qt6::Gui Qt6::Concurrent sodium)
+if (WIN32)
+    target_link_libraries(vaultcore PUBLIC bcrypt)
+else()
+    find_package(OpenSSL REQUIRED)
+    target_link_libraries(vaultcore PUBLIC OpenSSL::Crypto)
+endif()
 set_target_properties(vaultcore PROPERTIES AUTOMOC ON POSITION_INDEPENDENT_CODE ON)
 
 if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/importedcontent/CMakeLists.txt")

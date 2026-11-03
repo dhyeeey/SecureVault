@@ -6,6 +6,7 @@
 
 struct VaultHeader {
     quint16 version = 1;
+    FileCipher fileCipher = FileCipher::XChaCha20Poly1305;
     CryptoService::KdfParams kdf;
     QByteArray salt;
     QByteArray wrappedMaster;
@@ -13,7 +14,8 @@ struct VaultHeader {
 
 class VaultFormat {
 public:
-    static constexpr quint16 kVersion = 1;
+    static constexpr quint16 kVersion = 2;
+    static constexpr quint16 kMinVersion = 1;
     static constexpr int kHeaderBytes = 112;
     static QByteArray wrapAad();
     static QByteArray indexAad();

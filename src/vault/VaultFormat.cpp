@@ -118,10 +118,20 @@ bool VaultFormat::readHeader(const QString &vaultDir, VaultHeader *header, QStri
         return false;
     }
     header->version = readU16(b, 4);
-    if (header->version != kVersion) {
+    if (header->version < kMinVersion || header->version > kVersion) {
         if (error)
             *error = QStringLiteral("Unsupported vault version");
         return false;
+    }
+    const quint16 cipherId = readU16(b, 6);
+    if (header->version == 1) {
+        header->fileCipher = FileCipher::XChaCha20Poly1305;
+    } else if (!CryptoService::isFileCipher(cipherId)) {
+        if (error)
+            *error = QStringLiteral("Unknown file cipher");
+        return false;
+    } else {
+        header->fileCipher = static_cast<FileCipher>(cipherId);
     }
     header->kdf.opslimit = readU32(b, 8);
     header->kdf.memlimit = readU64(b, 12);
@@ -144,8 +154,8 @@ bool VaultFormat::writeHeader(const QString &vaultDir, const VaultHeader &header
     QByteArray b;
     b.reserve(kHeaderBytes);
     b.append("SVLT", 4);
-    b.append(leU16(header.version));
-    b.append(leU16(0));
+    b.append(leU16(header.version == 0 ? kVersion : header.version));
+    b.append(leU16(static_cast<quint16>(header.fileCipher)));
     b.append(leU32(header.kdf.opslimit));
     b.append(leU64(header.kdf.memlimit));
     b.append(leU32(static_cast<quint32>(header.kdf.alg)));

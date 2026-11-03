@@ -12,6 +12,7 @@ public:
     bool writeBlob(const QString &blobId,
                    QIODevice *plaintext,
                    const unsigned char *fileKey32,
+                   FileCipher cipher,
                    QString *error,
                    const std::function<void(qint64, qint64)> &progress = {}) override;
 

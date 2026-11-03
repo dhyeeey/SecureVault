@@ -21,6 +21,7 @@ if command -v linuxdeployqt >/dev/null 2>&1; then
 fi
 
 echo "Install linuxdeployqt (or cqtdeployer) and re-run."
+echo "AES-GCM needs OpenSSL libcrypto on the runtime PATH (libcrypto.so.3)."
 echo "Until then you can run from the build tree if Qt is on LD_LIBRARY_PATH:"
 echo "  export LD_LIBRARY_PATH=\"\$QTDIR/lib:\${LD_LIBRARY_PATH:-}\""
 echo "  $EXE"
