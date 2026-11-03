@@ -26,3 +26,4 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "Deployed Qt runtime next to $ExePath"
 Write-Host "Copy that folder to ship a Windows build. libsodium is linked in if built static."
+Write-Host "AES-GCM uses Windows CNG (bcrypt.dll, already on the OS). Do not copy OpenSSL libcrypto on Windows."

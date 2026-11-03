@@ -37,6 +37,7 @@ QString FolderBlobStore::blobPath(const QString &blobId) const
 bool FolderBlobStore::writeBlob(const QString &blobId,
                                 QIODevice *plaintext,
                                 const unsigned char *fileKey32,
+                                FileCipher cipher,
                                 QString *error,
                                 const std::function<void(qint64, qint64)> &progress)
 {
@@ -48,7 +49,7 @@ bool FolderBlobStore::writeBlob(const QString &blobId,
             *error = QStringLiteral("Cannot create blob file");
         return false;
     }
-    if (!CryptoService::streamEncrypt(plaintext, &out, fileKey32, error, progress)) {
+    if (!CryptoService::streamEncrypt(plaintext, &out, fileKey32, cipher, error, progress)) {
         out.cancelWriting();
         return false;
     }

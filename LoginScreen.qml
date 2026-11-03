@@ -30,7 +30,8 @@ Item {
                 localError = qsTr("Passwords do not match.")
                 return
             }
-            vault.createVault(vault.vaultPath, passwordField.text)
+            const cipherId = cipherCombo.currentValue === undefined ? 0 : cipherCombo.currentValue
+            vault.createVault(vault.vaultPath, passwordField.text, cipherId)
         }
         passwordField.text = ""
         confirmField.text = ""
@@ -89,7 +90,7 @@ Item {
                 Layout.fillWidth: true
             }
             Label {
-                text: qsTr("XChaCha20-Poly1305 · Argon2id")
+                text: vault.protectionText
                 color: Theme.headerMuted
                 font.pixelSize: 11
             }
@@ -186,6 +187,32 @@ Item {
                     onTextEdited: root.localError = ""
                     Keys.onReturnPressed: root.submit()
                     Keys.onEnterPressed: root.submit()
+                }
+
+                Label {
+                    visible: root.creating
+                    text: qsTr("File encryption")
+                    font.pixelSize: 12
+                    color: Theme.muted
+                }
+
+                ComboBox {
+                    id: cipherCombo
+                    Layout.fillWidth: true
+                    visible: root.creating
+                    implicitHeight: 36
+                    enabled: !vault.busy
+                    textRole: "text"
+                    valueRole: "id"
+                    model: vault.cipherModel
+                    currentIndex: 0
+                    Component.onCompleted: currentIndex = Math.max(0, indexOfValue(vault.fileCipher))
+
+                    background: Rectangle {
+                        radius: Theme.radius
+                        color: cipherCombo.hovered ? "#f1f5f9" : Theme.panel
+                        border.color: cipherCombo.activeFocus ? Theme.accent : Theme.line
+                    }
                 }
 
                 Rectangle {

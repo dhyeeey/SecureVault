@@ -8,9 +8,22 @@ Item {
     signal back()
 
     property bool passwordPending: false
+    property bool cipherPending: false
+    property int pendingCipher: 0
 
     function syncPrefs() {
         lockCombo.currentIndex = Math.max(0, lockCombo.indexOfValue(vault.autoLockMinutes))
+        if (cipherCombo)
+            cipherCombo.currentIndex = Math.max(0, cipherCombo.indexOfValue(vault.fileCipher))
+    }
+
+    function cipherName(id) {
+        const rows = vault.cipherModel
+        for (let i = 0; i < rows.length; ++i) {
+            if (rows[i].id === id)
+                return rows[i].text
+        }
+        return vault.fileCipherName
     }
 
     onVisibleChanged: {
@@ -21,8 +34,9 @@ Item {
     Connections {
         target: vault
         function onVaultPrefsChanged() { root.syncPrefs() }
+        function onFileCipherChanged() { root.syncPrefs() }
         function onLastErrorChanged() {
-            if (root.visible && !root.passwordPending && vault.lastError.length > 0)
+            if (root.visible && !root.passwordPending && !root.cipherPending && vault.lastError.length > 0)
                 toast.show(vault.lastError, "error")
         }
     }
@@ -30,19 +44,28 @@ Item {
     Connections {
         target: vault
         function onBusyChanged() {
-            if (vault.busy || !root.passwordPending)
+            if (vault.busy)
                 return
-            root.passwordPending = false
-            if (vault.lastError.length > 0)
-                toast.show(vault.lastError, "error")
-            else
-                toast.show(qsTr("Password changed."))
+            if (root.passwordPending) {
+                root.passwordPending = false
+                if (vault.lastError.length > 0)
+                    toast.show(vault.lastError, "error")
+                else
+                    toast.show(qsTr("Password changed."))
+            }
+            if (root.cipherPending) {
+                root.cipherPending = false
+                if (vault.lastError.length > 0)
+                    toast.show(vault.lastError, "error")
+                else
+                    toast.show(qsTr("File encryption updated."))
+            }
         }
     }
 
     Shortcut {
         sequence: "Escape"
-        enabled: root.visible && !passwordDialog.visible
+        enabled: root.visible && !vault.busy && !passwordDialog.visible && !cipherDialog.visible
         onActivated: root.back()
     }
 
@@ -59,6 +82,25 @@ Item {
     ChangePasswordDialog {
         id: passwordDialog
         onAccepted: root.passwordPending = true
+    }
+
+    AppDialog {
+        id: cipherDialog
+        title: qsTr("Re-encrypt files?")
+        okText: qsTr("Re-encrypt")
+        onRejected: root.syncPrefs()
+        onAccepted: {
+            root.cipherPending = true
+            vault.setFileCipher(root.pendingCipher)
+        }
+
+        Label {
+            width: 360
+            wrapMode: Text.WordWrap
+            color: Theme.text
+            text: qsTr("This decrypts every file and writes it again with %1. Closing the app mid-way is safe — leftover files keep their current cipher.")
+                  .arg(cipherName(root.pendingCipher))
+        }
     }
 
     // ---------- inline components ----------
@@ -191,7 +233,11 @@ Item {
                 text: qsTr("‹  Back")
                 variant: "header"
                 focusPolicy: Qt.NoFocus
-                onClicked: root.back()
+                enabled: !vault.busy
+                onClicked: {
+                    if (!vault.busy)
+                        root.back()
+                }
             }
             Label {
                 text: qsTr("Settings")
@@ -316,6 +362,42 @@ Item {
                 Divider {}
 
                 SettingRow {
+                    title: qsTr("File encryption")
+                    description: qsTr("Used for file contents. Changing this re-encrypts every file. Password wrapping stays XChaCha20-Poly1305.")
+
+                    ComboBox {
+                        id: cipherCombo
+                        implicitWidth: 230
+                        implicitHeight: 34
+                        textRole: "text"
+                        valueRole: "id"
+                        model: vault.cipherModel
+                        enabled: vault.unlocked && !vault.busy
+                        Component.onCompleted: root.syncPrefs()
+                        onActivated: {
+                            const next = currentValue
+                            if (next === vault.fileCipher)
+                                return
+                            root.pendingCipher = next
+                            if (vault.itemCount > 0) {
+                                cipherDialog.open()
+                            } else {
+                                root.cipherPending = true
+                                vault.setFileCipher(next)
+                            }
+                        }
+
+                        background: Rectangle {
+                            radius: Theme.radius
+                            color: cipherCombo.hovered ? "#f1f5f9" : Theme.panel
+                            border.color: cipherCombo.activeFocus ? Theme.accent : Theme.line
+                        }
+                    }
+                }
+
+                Divider {}
+
+                SettingRow {
                     title: qsTr("Password")
                     description: qsTr("Re-wrap the vault key with a new password.")
 
@@ -368,7 +450,8 @@ Item {
                         wrapMode: Text.WordWrap
                         font.pixelSize: 12
                         color: Theme.muted
-                        text: qsTr("Files are encrypted with XChaCha20-Poly1305. Your password is stretched with Argon2id. There is no password recovery.")
+                        text: qsTr("Files are encrypted with %1. Your password is stretched with Argon2id. There is no password recovery.")
+                              .arg(vault.fileCipherName)
                     }
                 }
             }

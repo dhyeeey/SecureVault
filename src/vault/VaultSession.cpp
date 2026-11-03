@@ -129,6 +129,9 @@ VaultSession::VaultSession(QObject *parent)
             connect(clip, &QClipboard::dataChanged, this, &VaultSession::clipboardChanged);
     }
     m_vaultPath = defaultVaultPath();
+    VaultHeader header;
+    if (VaultFormat::readHeader(m_vaultPath, &header, nullptr))
+        m_fileCipher = header.fileCipher;
 }
 
 VaultSession::~VaultSession()
@@ -144,7 +147,13 @@ void VaultSession::setVaultPath(const QString &path)
     if (m_vaultPath == local)
         return;
     m_vaultPath = local;
+    FileCipher next = FileCipher::XChaCha20Poly1305;
+    VaultHeader header;
+    if (VaultFormat::readHeader(m_vaultPath, &header, nullptr))
+        next = header.fileCipher;
+    m_fileCipher = next;
     emit vaultPathChanged();
+    emit fileCipherChanged();
 }
 
 void VaultSession::setSearchQuery(const QString &query)
@@ -316,14 +325,32 @@ bool VaultSession::isVaultAt(const QString &path) const
     return VaultFormat::isVaultDir(toLocalPath(path));
 }
 
-void VaultSession::createVault(const QString &path, const QString &password)
+QString VaultSession::protectionText() const
+{
+    return CryptoService::fileCipherName(m_fileCipher) + QStringLiteral(" · Argon2id");
+}
+
+void VaultSession::createVault(const QString &path, const QString &password, int fileCipher)
 {
     const QString local = toLocalPath(path);
     QString pw = password;
-    runAsync([this, local, pw](QString *error) mutable {
-        const bool ok = createVaultImpl(local, pw, error);
+    const int cipher = fileCipher;
+    runAsync([this, local, pw, cipher](QString *error) mutable {
+        const bool ok = createVaultImpl(local, pw, error, cipher);
         CryptoService::wipe(const_cast<QString &>(pw));
         return ok;
+    });
+}
+
+void VaultSession::setFileCipher(int fileCipher)
+{
+    if (!m_unlocked || m_busy)
+        return;
+    const FileCipher next = CryptoService::fileCipherFromId(fileCipher);
+    if (next == m_fileCipher)
+        return;
+    runAsync([this, next](QString *error) {
+        return reencryptToCipherImpl(static_cast<int>(next), error);
     });
 }
 
@@ -513,7 +540,7 @@ QStringList VaultSession::fileIds() const
     return ids;
 }
 
-bool VaultSession::createVaultImpl(QString path, QString password, QString *error)
+bool VaultSession::createVaultImpl(QString path, QString password, QString *error, int fileCipher)
 {
     path = toLocalPath(path);
     if (path.isEmpty()) {
@@ -550,6 +577,7 @@ bool VaultSession::createVaultImpl(QString path, QString password, QString *erro
 
     VaultHeader header;
     header.version = VaultFormat::kVersion;
+    header.fileCipher = CryptoService::fileCipherFromId(fileCipher);
     header.kdf = CryptoService::interactiveKdf();
     header.salt = CryptoService::randomBytes(CryptoService::kSaltBytes);
 
@@ -578,6 +606,7 @@ bool VaultSession::createVaultImpl(QString path, QString password, QString *erro
     }
     m_index.clear();
     m_vaultPath = path;
+    m_fileCipher = header.fileCipher;
     if (!saveIndex(error)) {
         m_master.reset();
         return false;
@@ -623,6 +652,7 @@ bool VaultSession::unlockImpl(QString path, QString password, QString *error)
         return false;
     }
     m_vaultPath = path;
+    m_fileCipher = header.fileCipher;
     m_currentFolderId.clear();
     m_unlocked = true;
     return true;
@@ -959,6 +989,13 @@ void VaultSession::setLastError(const QString &error)
 
 void VaultSession::setProgress(double value, const QString &text)
 {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(
+            this,
+            [this, value, text]() { setProgress(value, text); },
+            Qt::QueuedConnection);
+        return;
+    }
     m_progress = value;
     m_progressText = text;
     emit progressChanged();
@@ -1038,10 +1075,16 @@ void VaultSession::closeVaultState()
     m_idleTimer.stop();
     const bool wasUnlocked = m_unlocked;
     m_unlocked = false;
+    FileCipher displayed = FileCipher::XChaCha20Poly1305;
+    VaultHeader header;
+    if (VaultFormat::readHeader(m_vaultPath, &header, nullptr))
+        displayed = header.fileCipher;
+    m_fileCipher = displayed;
     refreshModel();
     emit clipboardChanged();
     emit searchQueryChanged();
     emit vaultPrefsChanged();
+    emit fileCipherChanged();
     if (wasUnlocked)
         emit unlockedChanged();
 }
@@ -1065,6 +1108,7 @@ void VaultSession::runAsync(const std::function<bool(QString *)> &fn)
                         emit unlockedChanged();
                         applyPrefs();
                         emit vaultPrefsChanged();
+                        emit fileCipherChanged();
                     }
                     emit vaultPathChanged();
                     refreshModel();
@@ -1367,6 +1411,67 @@ bool VaultSession::saveIndex(QString *error)
     return m_index.save(m_vaultPath, m_master.data(), error);
 }
 
+bool VaultSession::persistFileCipher(QString *error)
+{
+    VaultHeader header;
+    if (!VaultFormat::readHeader(m_vaultPath, &header, error))
+        return false;
+    header.version = VaultFormat::kVersion;
+    header.fileCipher = m_fileCipher;
+    return VaultFormat::writeHeader(m_vaultPath, header, error);
+}
+
+bool VaultSession::reencryptToCipherImpl(int fileCipher, QString *error)
+{
+    if (!m_unlocked || !m_master.valid() || !m_store) {
+        if (error)
+            *error = QStringLiteral("Unlock the vault first");
+        return false;
+    }
+    const FileCipher next = CryptoService::fileCipherFromId(fileCipher);
+    if (next == m_fileCipher)
+        return true;
+
+    const FileCipher previous = m_fileCipher;
+    m_fileCipher = next;
+    setProgress(0.0, QStringLiteral("Re-encrypting files…"));
+    if (!persistFileCipher(error)) {
+        m_fileCipher = previous;
+        return false;
+    }
+
+    const QStringList ids = fileIds();
+    int done = 0;
+    for (const QString &id : ids) {
+        VaultEntry *e = m_index.find(id);
+        if (!e || e->isDir)
+            continue;
+        setProgress(ids.isEmpty() ? 1.0 : double(done) / double(ids.size()),
+                    QStringLiteral("Re-encrypting %1").arg(e->name));
+        const QString tmpPath = QDir::temp().filePath(
+            QStringLiteral("sv-reenc-") + QUuid::createUuid().toString(QUuid::WithoutBraces));
+        const QString oldBlob = e->blobId;
+        if (!decryptBlobToFile(*e, tmpPath, error)) {
+            secureDeleteFile(tmpPath);
+            return false;
+        }
+        if (!encryptFileToBlob(tmpPath, e, error)) {
+            secureDeleteFile(tmpPath);
+            return false;
+        }
+        secureDeleteFile(tmpPath);
+        if (!saveIndex(error))
+            return false;
+        if (!oldBlob.isEmpty() && oldBlob != e->blobId) {
+            QString removeErr;
+            m_store->removeBlob(oldBlob, &removeErr);
+        }
+        ++done;
+    }
+    setProgress(1.0, QStringLiteral("Re-encryption complete"));
+    return true;
+}
+
 bool VaultSession::encryptFileToBlob(const QString &srcPath, VaultEntry *entry, QString *error)
 {
     QMutexLocker locker(&m_ioMutex);
@@ -1385,7 +1490,7 @@ bool VaultSession::encryptFileToBlob(const QString &srcPath, VaultEntry *entry, 
     entry->size = in.size();
     unsigned char fileKey[CryptoService::kKeyBytes];
     CryptoService::deriveFileKey(m_master.data(), entry->blobId.toLatin1(), fileKey);
-    const bool ok = m_store->writeBlob(entry->blobId, &in, fileKey, error);
+    const bool ok = m_store->writeBlob(entry->blobId, &in, fileKey, m_fileCipher, error);
     CryptoService::wipe(fileKey, sizeof(fileKey));
     return ok;
 }

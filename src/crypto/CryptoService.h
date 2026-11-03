@@ -2,10 +2,18 @@
 
 #include <QByteArray>
 #include <QString>
+#include <QVariantList>
 #include <QtGlobal>
 #include <functional>
 
 class QIODevice;
+
+enum class FileCipher : quint16 {
+    XChaCha20Poly1305 = 0,
+    Aes128Gcm = 1,
+    Aes192Gcm = 2,
+    Aes256Gcm = 3,
+};
 
 class MasterKey {
 public:
@@ -34,8 +42,11 @@ public:
     static constexpr int kAeadTagBytes = 16;
     static constexpr int kStreamHeaderBytes = 24;
     static constexpr int kChunkSize = 64 * 1024;
-    static constexpr quint8 kBlobVersion = 1;
+    static constexpr quint8 kBlobVersion = 1;      // XChaCha20-Poly1305 secretstream
+    static constexpr quint8 kBlobVersion2 = 2;     // version | cipherId | ...
     static constexpr quint8 kIndexVersion = 1;
+    static constexpr int kGcmNonceBytes = 12;
+    static constexpr int kGcmTagBytes = 16;
 
     struct KdfParams {
         quint32 opslimit = 2;
@@ -46,6 +57,12 @@ public:
     static bool init();
     static KdfParams interactiveKdf();
     static QByteArray randomBytes(size_t n);
+
+    static bool isFileCipher(quint16 id);
+    static FileCipher fileCipherFromId(int id);
+    static int aesKeyBytes(FileCipher cipher);
+    static QString fileCipherName(FileCipher cipher);
+    static QVariantList cipherModel();
 
     static bool deriveWrappingKey(const QString &password,
                                   const QByteArray &salt,
@@ -71,6 +88,13 @@ public:
     static bool streamEncrypt(QIODevice *in,
                               QIODevice *out,
                               const unsigned char *fileKey32,
+                              QString *error,
+                              const std::function<void(qint64, qint64)> &progress = {});
+
+    static bool streamEncrypt(QIODevice *in,
+                              QIODevice *out,
+                              const unsigned char *fileKey32,
+                              FileCipher cipher,
                               QString *error,
                               const std::function<void(qint64, qint64)> &progress = {});
 

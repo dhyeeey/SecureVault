@@ -35,7 +35,10 @@ class VaultSession : public QObject {
     Q_PROPERTY(QString usedSizeText READ usedSizeText NOTIFY statsChanged)
     Q_PROPERTY(QString searchQuery READ searchQuery WRITE setSearchQuery NOTIFY searchQueryChanged)
     Q_PROPERTY(QString defaultVaultPath READ defaultVaultPath CONSTANT)
-    Q_PROPERTY(QString protectionText READ protectionText CONSTANT)
+    Q_PROPERTY(QString protectionText READ protectionText NOTIFY fileCipherChanged)
+    Q_PROPERTY(int fileCipher READ fileCipher WRITE setFileCipher NOTIFY fileCipherChanged)
+    Q_PROPERTY(QString fileCipherName READ fileCipherName NOTIFY fileCipherChanged)
+    Q_PROPERTY(QVariantList cipherModel READ cipherModel CONSTANT)
     Q_PROPERTY(QVariantList breadcrumbs READ breadcrumbs NOTIFY currentFolderChanged)
     Q_PROPERTY(QString sortKey READ sortKey NOTIFY sortChanged)
     Q_PROPERTY(bool sortAscending READ sortAscending NOTIFY sortChanged)
@@ -63,7 +66,10 @@ public:
     QString usedSizeText() const;
     QString searchQuery() const { return m_searchQuery; }
     QString defaultVaultPath() const;
-    QString protectionText() const { return QStringLiteral("XChaCha20-Poly1305 · Argon2id"); }
+    QString protectionText() const;
+    int fileCipher() const { return static_cast<int>(m_fileCipher); }
+    QString fileCipherName() const { return CryptoService::fileCipherName(m_fileCipher); }
+    QVariantList cipherModel() const { return CryptoService::cipherModel(); }
     QVariantList breadcrumbs() const;
     QString sortKey() const { return m_sortKey; }
     bool sortAscending() const { return m_sortAscending; }
@@ -80,7 +86,8 @@ public:
     void setIdleTimeoutMs(int ms);
     void installIdleGuard(QCoreApplication *app);
 
-    Q_INVOKABLE void createVault(const QString &path, const QString &password);
+    Q_INVOKABLE void createVault(const QString &path, const QString &password, int fileCipher = 0);
+    Q_INVOKABLE void setFileCipher(int fileCipher);
     Q_INVOKABLE void unlock(const QString &path, const QString &password);
     Q_INVOKABLE void lock();
     Q_INVOKABLE void changePassword(const QString &oldPassword, const QString &newPassword);
@@ -101,7 +108,8 @@ public:
     Q_INVOKABLE QStringList currentVisibleIds() const;
 
     // Synchronous helpers used by tests and background jobs.
-    bool createVaultImpl(QString path, QString password, QString *error);
+    bool createVaultImpl(QString path, QString password, QString *error, int fileCipher = 0);
+    bool reencryptToCipherImpl(int fileCipher, QString *error);
     bool unlockImpl(QString path, QString password, QString *error);
     bool changePasswordImpl(QString oldPassword, QString newPassword, QString *error);
     bool importPathsImpl(QStringList paths, QString *error, bool move = false);
@@ -123,6 +131,7 @@ signals:
     void idleTimeoutMsChanged();
     void sortChanged();
     void vaultPrefsChanged();
+    void fileCipherChanged();
     void vaultChanged();
 
 protected:
@@ -158,6 +167,7 @@ private:
     QString newEntryId() const;
     QStringList descendants(const QString &id) const;
     bool saveIndex(QString *error);
+    bool persistFileCipher(QString *error);
     bool encryptFileToBlob(const QString &srcPath, VaultEntry *entry, QString *error);
     bool decryptBlobToFile(const VaultEntry &entry, const QString &destPath, QString *error);
     bool copySubtree(const QString &sourceId, const QString &destParentId, QString *error);
@@ -193,4 +203,5 @@ private:
     bool m_unlocked = false;
     bool m_busy = false;
     bool m_lockAfterBusy = false;
+    FileCipher m_fileCipher = FileCipher::XChaCha20Poly1305;
 };

@@ -20,12 +20,14 @@ void ContainerBlobStore::closeStore() {}
 bool ContainerBlobStore::writeBlob(const QString &blobId,
                                    QIODevice *plaintext,
                                    const unsigned char *fileKey32,
+                                   FileCipher cipher,
                                    QString *error,
                                    const std::function<void(qint64, qint64)> &progress)
 {
     Q_UNUSED(blobId);
     Q_UNUSED(plaintext);
     Q_UNUSED(fileKey32);
+    Q_UNUSED(cipher);
     Q_UNUSED(progress);
     return notImplemented(error);
 }
